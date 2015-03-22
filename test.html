@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <title>Lab 7 Tester</title>
+        <style>
+            #recived_message, #system_message
+            {
+                border-style: inset;
+                width: 400px;
+                height: 400px;
+                display: -webkit-inline-box;
+                position: absolute;
+                overflow: scroll;
+            }
+        </style>
+        <script type="text/javascript">
+            
+            var ws;
+            var port = 42408;
+            var path = "/~cwang4620/Lab7/ws_server.sws";
+            
+            var username, password;
+            var receiver, input_message;
+            
+            function WebSocketTest()
+            {
+                if (document.URL != "http://cs.tru.ca:42408/Lab7/test.html")
+                    window.location.href = "http://cs.tru.ca:42408/Lab7/test.html";
+                
+                if ("WebSocket" in window)
+                {
+                    print("WebSocket is supported by your Browser!", true);
+                    
+                    // Let us open a web socket
+                    ws = new WebSocket("ws://cs.tru.ca:" + port + path);
+                    
+                    ws.onopen = function()
+                    {  // Web Socket is connected, send data using send()
+                        print("Connected", true);
+                    };
+                    
+                    ws.onmessage = function (evt)
+                    {
+                        var received_msg = evt.data;
+                        //print("Message is received back..." + received_msg);
+                        
+                        var toAll;
+                        
+                        if (received_msg.indexOf("<i>") == 0)
+                            toAll = true;
+                        else
+                            toAll = false
+                        
+                        
+                        
+                        if (received_msg.indexOf("You have joined the chat room") != -1)
+                        {
+                            document.getElementById('joinButton').disabled = true;
+                            document.getElementById('signInButton').disabled = true;
+                            document.getElementById('unsubscribeButton').disabled = false;
+                            document.getElementById('oneToOneButton').disabled = false;
+                            document.getElementById('broadcastingButton').disabled = false;
+                        }
+                        else if (received_msg.indexOf("has been removed") != -1)
+                        {
+                            document.getElementById('joinButton').disabled = true;
+                            document.getElementById('signInButton').disabled = true;
+                            document.getElementById('unsubscribeButton').disabled = true;
+                            document.getElementById('oneToOneButton').disabled = true;
+                            document.getElementById('broadcastingButton').disabled = true;
+                            document.getElementById('signOutButton').disabled = true;
+                        }
+                        
+                        print(received_msg, toAll);
+                    };
+                    
+                    ws.onclose = function()
+                    {  // websocket is closed.
+                        print("Connection is closed.", true);
+                    };
+                    
+                    ws.onerror = function(evt)
+                    {
+                        print("Error: " + evt.data, true);
+                    };
+                    
+                    document.getElementById('signOutButton').disabled = false;
+                    
+                    document.getElementById('joinButton').disabled = false;
+                    document.getElementById('signInButton').disabled = false;
+                }
+                else  // The browser doesn't support WebSocket
+                    print("WebSocket NOT supported by your Browser!", true);
+            }
+        
+            function send_end()
+            {
+                // The test ws server will understand 'end' as the disconnection request.
+                document.getElementById('signOutButton').disabled = true;
+                var currentUser = document.getElementById('currentUser');
+                currentUser.innerHTML = "";
+                ws.send('end');
+            }
+            /*
+            function ws_close()
+            {
+                ws.close();  // This sends the termination request to the server
+                print("ws.readyState: " + ws.readyState, true);
+            }
+             */
+            function join()
+            {
+                username = document.getElementById('username').value;
+                password = document.getElementById('password').value;
+                var messages;
+                messages = 'join:{"username": "' + username + '", "password": "' + password + '"}';
+                
+                // display current username
+                var currentUser = document.getElementById('currentUser');
+                currentUser.innerHTML = "Hello <b>" + username + "</b>";
+                
+                ws.send(messages);
+            }
+        
+            function sign_in()
+            {
+                username = document.getElementById('username').value;
+                password = document.getElementById('password').value;
+                var messages;
+                messages = 'sign_in:{"username": "' + username + '", "password": "' + password + '"}';
+                //messages = "sign_in:" + username;
+                
+                // display current username
+                var currentUser = document.getElementById('currentUser');
+                currentUser.innerHTML = "Hello <b>" + username + "</b>";
+                
+                ws.send(messages);
+            }
+        
+            function unsubscribe()
+            {
+                username = document.getElementById('username').value;
+                password = document.getElementById('password').value;
+                var messages;
+                messages = 'unsubscribe:{"username": "' + username + '", "password": "' + password + '"}';
+                
+                // display current username
+                var currentUser = document.getElementById('currentUser');
+                currentUser.innerHTML = "Hello <b>" + username + "</b>";
+            
+                ws.send(messages);
+            }
+        
+            function one_to_one()
+            {
+                receiver = document.getElementById('receiver').value;
+                input_message = document.getElementById('input_message').value;
+                var messages;
+                messages = 'one_to_one:{"receiver": "' + receiver + '", "input_message": "' + input_message + '"}';
+                //messages = "one_to_one:" + receiver;
+                ws.send(messages);
+            }
+            
+            function broadcasting()
+            {
+                input_message = document.getElementById('input_message').value;
+                var messages;
+                //messages = '{"command": "one_to_one", "receiver": "' + receiver + '", "input_message": "' + input_message + '"}';
+                messages = "broadcasting:" + input_message;
+                ws.send(messages);
+            }
+        
+            var system_message = '';
+            var recived_message = '';
+            function print(msg, systemMessageType)
+            {
+                if (systemMessageType)
+                    system_message += msg + '<br>';
+                else
+                    recived_message += msg + '<br>';
+                    
+                updateDiv('system_message', system_message);
+                updateDiv('recived_message', recived_message);
+            }
+            
+            function set_port()
+            {
+                port = document.getElementById('port').value;
+            }
+            
+            function set_path()
+            {
+                path = document.getElementById('path').value;
+            }
+        
+            function updateDiv(elementID, elementMessage)
+            {
+                var element = document.getElementById(elementID);
+                element.innerHTML = elementMessage;
+                element.scrollTop = element.scrollHeight;
+            }
+        
+            window.onbeforeunload = function()
+            {
+                ws.send('end');
+            }
+        </script>
+    </head>
+    <body>
+        <div>
+            <input style = 'width: 400px' id = 'port' value = '42408'></input>
+            <input type = 'submit' value = 'Set Port' onclick = 'set_port()'></input>
+            <br>
+            <input style = 'width: 400px' id = 'path' value = '/~cwang4620/Lab7/ws_server.sws'></input>
+            <input type = 'submit' value = 'Set Path' onclick = 'set_path()'></input>
+            <br>
+            Click <a id = "runWS" href="javascript:WebSocketTest()">Run WebSocket</a> to make a connection.
+            <br>
+            <button id = "signOutButton" onclick = 'send_end()' disabled>Sign Out and Stop WebSocket</button>
+            <br><!--
+            <button onclick = 'ws_close()'>Close the connection</button>
+            <br>-->
+            <br>
+            <input id = 'username' placeholder = 'Enter username'></input>
+            <input id = 'password' placeholder = 'Enter password'></input>
+            <br>
+            <input id = 'joinButton' type = 'submit' value = 'Join' onclick = 'join()' disabled></input>
+            <input id = 'signInButton' type = 'submit' value = 'Sign In' onclick = 'sign_in()' disabled></input>
+            <input id = 'unsubscribeButton' type = 'submit' value = 'Unsubscribe' onclick = 'unsubscribe()' disabled></input>
+            <br>
+            <br>
+            <input id = 'receiver' placeholder = "Enter receiver's name"></input>
+            <input id = 'input_message' placeholder = "Enter message"></input>
+            <br>
+            <input id = 'oneToOneButton' type = 'submit' value = 'One-to-one Chatting' onclick = 'one_to_one()' disabled></input>
+            <input id = 'broadcastingButton' type = 'submit' value = 'Broadcasting' onclick = 'broadcasting()' disabled></input>
+            <br>
+            <p id = 'currentUser'></p>
+            <div id = 'recived_message'></div>
+            <div id = 'system_message' style = 'margin-left: 415px'></div>
+        </div>
+    </body>
+</html>

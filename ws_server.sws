@@ -1,0 +1,259 @@
+var WebSocketServer = require('ws').Server;
+var mongoClient = require('mongodb').MongoClient;
+
+var name, pass, receiver, receivedMessage, html;
+
+function start(http_server)
+{
+    // different from the standalone version
+    ws_server = new WebSocketServer({server: http_server});
+
+    var clients = [];
+    var clientNames = [];
+
+    ws_server.on('connection', function(ws_client)
+    {
+        ws_client.on('message', function(message)
+        {
+            // mongodb://user:password@server:port/database
+            mongoClient.connect('mongodb://user:password@server:port/database', function(err, db)
+            {
+                if(err) throw err;
+
+                // create a collection object for 'username_password'
+                // we assume the collection 'username_password' has two fields, 'username' and 'password'.
+                var collection = db.collection('username_password');
+
+                //ws_client.send('message is: ' + message);
+
+                if (message == 'end')
+                {
+                    //ws_client.send('In message == end');
+
+                    //Remove the disconnecting client from the list of clients
+                    index = clients.indexOf(ws_client);
+                    disconnecting_name = clientNames[index];
+
+                    clients.splice(index,1);
+                    clientNames.splice(index, 1);
+
+                    broadcast('<i><b>' + disconnecting_name + "</b> left the chat room. </i>");
+                    ws_client.close();
+                }
+                else if (message.indexOf("join:") == 0)
+                {   //client is connecting
+                    //ws_client.send('In join == 0');
+                    name = message.substr(5);
+                    parseNamePass(name);
+
+                    collection.findOne({'username': name}, function(err, foundDoc)
+                    {
+                        if (foundDoc != null)
+                        {
+                            db.close();
+                            ws_client.send('<i>The user exists</i>');
+                            return;
+                        }
+                        else
+                        {   //db.inventory.insert( { _id: 10, type: "misc", item: "card", qty: 15 } )
+                            // .insert(); {w:1} makes the insert operation surely happen.
+                            collection.insert({'username': name, 'password': pass}, {w:1}, function(err, writeResult)
+                            {
+                                ws_client.send('<i><br>Hello, <b>' + name + '.</b></i>');
+                                ws_client.send("<i>Welcome to Willy Wonka's Chatting Program.</i>");
+
+                                //tell everyone you have joined the chatroom
+                                broadcast('<i><b>' + name + '</b> has joined the chat room. </i>');
+
+                                clients.push(ws_client); //add client to list of active clients
+                                clientNames.push(name) // associate client with name
+
+                                ws_client.send('<i>You have joined the chat room.</i>');
+                                ws_client.send('<i>Currently ' + getAllClientNames() + 'are online!<i>');
+                                return;
+                            });
+                        }
+                    });
+                }
+                else if (message.indexOf("sign_in:") == 0)
+                {   //client is connecting
+                    //ws_client.send('In sign_in == 0');
+                    name = message.substr(8);
+                    parseNamePass(name);
+
+                    collection.findOne({'username': name}, function(err, foundDoc)
+                    {
+                        if (foundDoc == null)
+                        {
+                            db.close();
+                            ws_client.send('<i>!!!The user is not found!!!</i>');
+                            return;
+                        }
+                        else
+                        {
+                            collection.findOne({'username': name, 'password': pass}, function(err, foundDoc)
+                            {
+                                if (foundDoc == null)
+                                {
+                                    db.close();
+                                    ws_client.send('<i>!!!Invalid password!!!</i>');
+                                    return;
+                                }
+                                else
+                                {
+                                    db.close();
+                                    //html = 'The user ' + foundDoc.username + ' and password ' + foundDoc.password + ' are valid.<br>';
+
+                                    //tell everyone you have joined the chatroom
+                                    broadcast('<i><b>' + name + '</b> has joined the chat room. </i>');
+
+                                    clients.push(ws_client); //add client to list of active clients
+                                    clientNames.push(name) // associate client with name
+
+                                    ws_client.send('<i>You have joined the chat room.</i>');
+                                    ws_client.send('<i>Currently ' + getAllClientNames() + 'are online!<i>');
+
+                                    return;
+                                }
+                            });
+                        }
+                    });
+                }
+                else if (message.indexOf("unsubscribe:") == 0)
+                {   //client is connecting
+                    //ws_client.send('In unsubscribe == 0');
+                    name = message.substr(12);
+                    parseNamePass(name);
+
+                    // let's use .find();
+                    collection.find({'username': name}).toArray(function(err, foundDocs)
+                    {
+                        if (foundDocs.length == 0)
+                        {
+                            db.close();
+                            ws_client.send('<i>???The user does not exist???</i>');
+                            return;
+                        }
+                        else
+                        {
+                            // let's delete the user
+                            collection.remove({'username': name, 'password': pass}, {w:1}, function(err, noOfRemovedDocs)
+                            {
+                                if (noOfRemovedDocs < 1)
+                                {
+                                    ws_client.send('<i>???Invalid password???</i>');
+                                    return;
+                                }
+                                else
+                                {
+                                    //html = 'Removed.<br>' + noOfRemovedDocs;
+
+                                    //Remove the disconnecting client from the list of clients
+                                    index = clients.indexOf(ws_client);
+                                    disconnecting_name = clientNames[index];
+
+                                    clients.splice(index,1);
+                                    clientNames.splice(index, 1);
+
+                                    ws_client.send('<i><b>' + disconnecting_name + '</b> has been removed.</i>');
+                                    broadcast('<i><b>' + disconnecting_name + "</b> left Willy Wonka's Chatting Program.</i>");
+                                    ws_client.close();
+                                    return;
+                                }
+                            });
+                        }
+                    });
+                }
+                else if (message.indexOf("one_to_one:") == 0)
+                {
+                    //ws_client.send('In one_to_one');
+
+                    index = clients.indexOf(ws_client);
+                    name =  clientNames[index];
+
+                    message = message.substr(11);
+
+                    //ws_client.send(message);
+
+                    parseMessage(message);
+                    one_to_one();
+
+                    ws_client.send('<b>You told ' + receiverName + ':</b> ' + receivedMessage);
+                    //broadcast("<b>" + name + "</b>: " + message);
+
+                    //message = parseMessage(message);
+                    //ws_client.send(message);  // echoing
+                }
+                else if (message.indexOf("broadcasting:") == 0)
+                {
+                    //ws_client.send('In broadcasting');
+
+                    index = clients.indexOf(ws_client);
+                    name =  clientNames[index];
+
+                    message = message.substr(13);
+                    broadcast("<b>" + name + "</b> is broadcasting: " + message);
+
+                    //message = parseMessage(message);
+                    //ws_client.send(message);  // echoing
+                }
+                else
+                    ws_client.send('<b>Hello World!</b>');
+            });
+        });
+     });
+
+    //send message to the one you want
+    function one_to_one()
+    {
+        for (var i = 0; i < clients.length; i++)
+        {
+            receiverName = clientNames[i];
+            if (receiverName == receiver)
+            {
+                client = clients[i];
+                break;
+            }
+        }
+        client.send("<b>" + name + " said to you:</b> " + receivedMessage);
+    }
+
+    //send message to all clients
+    function broadcast(message)
+    {
+        for (var i = 0; i < clients.length; i++)
+        {
+            client = clients[i];
+            client.send(message);
+        }
+    }
+
+    //return all client names
+    function getAllClientNames()
+    {
+        var allNames = "";
+        for (var i = 0; i < clients.length; i++)
+        {
+            allNames += "<b>" + clientNames[i] + "</b>, ";
+        }
+        //allNames = substr(0, allNames.length - 2);
+        return allNames;
+    }
+}
+
+function parseMessage(newMessage)
+{
+    newMessage = JSON.parse(newMessage);
+
+    receiver = newMessage.receiver;
+    receivedMessage = newMessage.input_message;
+}
+
+function parseNamePass(newMessage)
+{
+    newMessage = JSON.parse(newMessage);
+
+    name = newMessage.username;
+    pass = newMessage.password;
+}
+exports.start = start;
